@@ -1,0 +1,6 @@
+{
+  "xmlData": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<sales>\n  <order>\n    <id>1001</id>\n    <customer>ACME Corp</customer>\n    <amount>1250.00</amount>\n  </order>\n</sales>",
+  "knowledge": "You are using JasperReports 7.0.3. Generate a valid JRXML with a title band, a columnHeader band with 5 columns, and a detail band with 1 row. No queryString needed.",
+  "systemPrompt": "You are a senior JasperReports 7.0.3 expert. Output ONLY valid JRXML inside a markdown ```xml code fence, no extra text.",
+  "userPrompt": "Generate a simple 5-column report. Return the JRXML wrapped in ```xml ... ``` markdown fences."
+}

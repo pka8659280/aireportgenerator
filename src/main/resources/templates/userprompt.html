@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>User Prompt Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div th:replace="~{navbar.html}"></div>
+    <div class="container mt-5">
+        <h1 class="mb-4">User Prompt Management</h1>
+
+        <div class="row mb-3">
+            <div class="col">
+                <button class="btn btn-primary" onclick="showAddModal()">Add User Prompt</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Title</th>
+                                        <th>Content</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="userPromptTableBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center">
+                                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                            Loading user prompts...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Modal -->
+    <div class="modal fade" id="userPromptModal" tabindex="-1">
+        <div class="modal-dialog" style="width: 90%; max-width: none; margin: 5%; height: 90%;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">Add User Prompt</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="userPromptForm">
+                        <input type="hidden" id="userPromptId">
+
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Title *</label>
+                            <input type="text" class="form-control" id="title" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="content" class="form-label">Content *</label>
+                            <textarea class="form-control" id="content" rows="6" required style="overflow: auto; resize: vertical;"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveUserPrompt()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserPrompts();
+        });
+
+        function loadUserPrompts() {
+            fetch('/api/userprompt')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('User prompt data received:', data);
+                    renderTable(data);
+                })
+                .catch(error => {
+                    console.error('Error loading user prompts:', error);
+                    document.getElementById('userPromptTableBody').innerHTML =
+                        '<tr><td colspan="5" class="text-center text-danger">Error loading user prompts</td></tr>';
+                });
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('userPromptTableBody');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No user prompts found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map((item, index) => `
+                <tr>
+                    <td>${index + 1}</td>
+                    <td>${escapeHtml(item.title)}</td>
+                    <td>${escapeHtml(item.content.length > 50 ? item.content.substring(0, 50) + '...' : item.content)}</td>
+                    <td>${escapeHtml(formatDate(item.createdAt || item.created_at))}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editUserPrompt('${item.userPromptId}')">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteUserPrompt('${item.userPromptId}')">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            try {
+                let date;
+                if (Array.isArray(dateString)) {
+                    // Handle array format [year, month, day, hour, minute, second, nanosecond]
+                    date = new Date(dateString[0], dateString[1] - 1, dateString[2], dateString[3] || 0, dateString[4] || 0, dateString[5] || 0);
+                } else {
+                    // Handle ISO string format
+                    date = new Date(dateString);
+                }
+                return date.toLocaleDateString();
+            } catch (e) {
+                console.error('Error parsing date:', dateString, e);
+                return 'Invalid Date';
+            }
+        }
+
+        function showAddModal() {
+            document.getElementById('modalTitle').textContent = 'Add User Prompt';
+            document.getElementById('userPromptId').value = '';
+            document.getElementById('title').value = '';
+            document.getElementById('content').value = '';
+
+            const modal = new bootstrap.Modal(document.getElementById('userPromptModal'));
+            modal.show();
+        }
+
+        function editUserPrompt(id) {
+            fetch(`/api/userprompt/${id}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('modalTitle').textContent = 'Edit User Prompt';
+                    document.getElementById('userPromptId').value = data.userPromptId;
+                    document.getElementById('title').value = data.title;
+                    document.getElementById('content').value = data.content;
+
+                    const modal = new bootstrap.Modal(document.getElementById('userPromptModal'));
+                    modal.show();
+                })
+                .catch(error => {
+                    console.error('Error loading user prompt:', error);
+                    alert('Error loading user prompt');
+                });
+        }
+
+        function saveUserPrompt() {
+            const form = document.getElementById('userPromptForm');
+            if (!form.checkValidity()) {
+                form.classList.add('was-validated');
+                return;
+            }
+
+            const userPromptId = document.getElementById('userPromptId').value;
+            const userPromptData = {
+                title: document.getElementById('title').value,
+                content: document.getElementById('content').value
+            };
+
+            const method = userPromptId ? 'PUT' : 'POST';
+            const url = userPromptId ? `/api/userprompt/${userPromptId}` : '/api/userprompt';
+
+            fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(userPromptData)
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.text().then(text => {
+                        throw new Error(`HTTP ${response.status}: ${text}`);
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                bootstrap.Modal.getInstance(document.getElementById('userPromptModal')).hide();
+                loadUserPrompts();
+                showAlert('User prompt saved successfully!', 'success');
+            })
+            .catch(error => {
+                console.error('Error saving user prompt:', error);
+                showAlert(`Error saving user prompt: ${error.message}`, 'danger');
+            });
+        }
+
+        function deleteUserPrompt(id) {
+            if (!confirm('Are you sure you want to delete this user prompt?')) {
+                return;
+            }
+
+            fetch(`/api/userprompt/${id}`, {
+                method: 'DELETE'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                loadUserPrompts();
+                showAlert('User prompt deleted successfully!', 'success');
+            })
+            .catch(error => {
+                console.error('Error deleting user prompt:', error);
+                showAlert('Error deleting user prompt', 'danger');
+            });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showAlert(message, type) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            alertDiv.innerHTML = `${escapeHtml(message)}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+            document.body.appendChild(alertDiv);
+
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

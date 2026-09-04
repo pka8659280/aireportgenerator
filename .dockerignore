@@ -1,0 +1,48 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Build outputs (we rebuild inside Docker)
+target/
+build/
+*.class
+*.jar
+*.war
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.settings/
+.project
+.classpath
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Maven local repo (re-downloaded in build stage anyway)
+.mvn/repository/
+
+# Logs
+logs/
+*.log
+
+# Docker files themselves
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Secrets (never sent to the Docker build context)
+.env
+
+# Windows batch files (not needed inside Linux container)
+*.bat
+kill-8080.bat
+
+# Test / dev files
+test_request.json
+README.md

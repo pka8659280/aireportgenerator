@@ -1,0 +1,1680 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Reporting Studio</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Fit the whole page into the viewport: no vertical page scroll */
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* Interactive Generation Console */
+        .console-log {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .log-entry {
+            padding: 1px 4px;
+            border-bottom: 1px solid #21262d;
+        }
+        .log-time {
+            color: #6e7681;
+            margin-right: 8px;
+            user-select: none;
+        }
+        .log-info { color: #c9d1d9; }
+        .log-success { color: #3fb950; }
+        .log-warn { color: #d29922; }
+        .log-error { color: #f85149; }
+        .console-step {
+            transition: color .15s ease;
+            white-space: nowrap;
+        }
+        .console-step.active { color: #58a6ff; font-weight: 600; }
+        .console-step.done { color: #3fb950; }
+        .console-step.failed { color: #f85149; }
+
+        /* Zoom button overlaid at the bottom-right of each content textarea */
+        .zoom-btn {
+            position: absolute;
+            right: 10px;      /* 10px from the corner so it is not hard to click */
+            bottom: 10px;
+            z-index: 5;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;      /* 26x26 click target for easy interaction */
+            height: 26px;
+            padding: 0;
+            line-height: 1;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            color: #495057;
+            cursor: pointer;
+            transition: background-color .15s ease, color .15s ease,
+                        border-color .15s ease, box-shadow .15s ease;
+        }
+        .zoom-btn:hover {     /* hover effect */
+            background: rgba(13, 110, 253, 0.12);
+            color: #0d6efd;
+            border-color: #86b7fe;
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+        }
+
+        /* AI polish icon button (same look as .zoom-btn but position-agnostic) */
+        /* Soft idle attention glow: a blue ring that fades in and out */
+        @keyframes ai-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0.35); }
+            50%      { box-shadow: 0 0 0 5px rgba(13, 110, 253, 0); }
+        }
+        .ai-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            line-height: 1;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            color: #495057;
+            cursor: pointer;
+            animation: ai-pulse 2s ease-in-out infinite;
+            transition: background-color .15s ease, color .15s ease,
+                        border-color .15s ease, box-shadow .15s ease;
+        }
+        .ai-btn:hover {
+            animation: none;
+            background: rgba(13, 110, 253, 0.12);
+            color: #0d6efd;
+            border-color: #86b7fe;
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+        }
+        .ai-btn.running {
+            animation: none;
+            background: #dc3545;
+            border-color: #dc3545;
+            color: #ffffff;
+        }
+        .ai-btn.running:hover {
+            background: #bb2d3b;
+            border-color: #b02a37;
+            box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.15);
+        }
+        .ai-btn-corner {
+            position: absolute;
+            right: 42px;      /* sits left of the zoom button (right:10px + 26px + 6px gap) */
+            bottom: 10px;
+            z-index: 5;
+        }
+
+        /* "Polishing..." overlay shown over the User Prompt textarea while AI polish runs */
+        .polish-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 3;               /* below the AI/zoom buttons (z-index 5) so Stop stays clickable */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            background: rgba(255, 255, 255, 0.65);
+            color: #0d6efd;
+            font-size: 0.9rem;
+            border-radius: 0.375rem;
+        }
+    </style>
+</head>
+<body>
+    <div th:replace="~{navbar.html}"></div>
+    <div class="container-fluid mt-3">
+        <h5 class="text-center text-muted">AI Reporting Studio - Generate reports using AI with XML data and Jasper templates</h5>
+        <hr>
+
+        <div class="row mb-3">
+            <div class="col text-center">
+                <button id="generate" class="btn btn-primary">Generate Report</button>
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label for="xmlDataSelect" class="form-label mb-0">XML Data</label>
+                    <button id="xmlDataSaveBtn" class="btn btn-sm btn-success" disabled>Save</button>
+                </div>
+                <select id="xmlDataSelect" class="form-select">
+                    <option value="">Select XML data...</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label for="knowledgeSelect" class="form-label mb-0">Knowledge</label>
+                    <button id="knowledgeSaveBtn" class="btn btn-sm btn-success" disabled>Save</button>
+                </div>
+                <select id="knowledgeSelect" class="form-select">
+                    <option value="">Select knowledge...</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label for="systemPromptSelect" class="form-label mb-0">System Prompt</label>
+                    <button id="systemPromptSaveBtn" class="btn btn-sm btn-success" disabled>Save</button>
+                </div>
+                <select id="systemPromptSelect" class="form-select">
+                    <option value="">Select a system prompt...</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label for="userPromptSelect" class="form-label mb-0">User Prompt</label>
+                    <button id="userPromptSaveBtn" class="btn btn-sm btn-success" disabled>Save</button>
+                </div>
+                <select id="userPromptSelect" class="form-select">
+                    <option value="">Select a user prompt...</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-3">
+                <label for="xmlData" class="form-label">XML Data:</label>
+                <div class="position-relative">
+                    <textarea id="xmlData" class="form-control" rows="5" style="white-space: pre; overflow-x: auto; resize: none; padding-right: 30px; padding-bottom: 26px;" placeholder="Enter XML data here" th:text="${xmlData}"></textarea>
+                    <button type="button" class="zoom-btn" data-zoom-target="xmlData" title="Zoom / Edit in large view">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+                            <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+                            <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+                            <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label for="knowledge" class="form-label">Knowledge:</label>
+                <div class="position-relative">
+                    <textarea id="knowledge" class="form-control" rows="5" style="white-space: pre; overflow-x: auto; resize: none; padding-right: 30px; padding-bottom: 26px;" placeholder="Enter knowledge here" th:text="${knowledge}"></textarea>
+                    <button type="button" class="zoom-btn" data-zoom-target="knowledge" title="Zoom / Edit in large view">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+                            <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+                            <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+                            <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label for="systemprompt" class="form-label">System Prompt:</label>
+                <div class="position-relative">
+                    <textarea id="systemprompt" class="form-control" rows="5" style="white-space: pre; overflow-x: auto; resize: none; padding-right: 72px; padding-bottom: 26px;" placeholder="Enter system prompt here" th:text="${systemPrompt}"></textarea>
+                    <button type="button" id="spPolishBtn" class="ai-btn ai-btn-corner" title="AI Polish (grammar only)" aria-label="AI Polish" style="display: none;">
+                        <svg class="ai-icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2c.8 5.2 4.8 9.2 10 10-5.2.8-9.2 4.8-10 10-.8-5.2-4.8-9.2-10-10 5.2-.8 9.2-4.8 10-10z"></path>
+                        </svg>
+                        <svg class="ai-stop-icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                            <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                        </svg>
+                    </button>
+                    <button type="button" id="spUndoBtn" class="btn btn-sm btn-outline-secondary" style="display: none; position: absolute; right: 74px; bottom: 8px; z-index: 5;">Undo</button>
+                    <button type="button" id="spRedoBtn" class="btn btn-sm btn-outline-secondary" style="display: none; position: absolute; right: 135px; bottom: 8px; z-index: 5;">Redo</button>
+                    <button type="button" class="zoom-btn" data-zoom-target="systemprompt" title="Zoom / Edit in large view">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+                            <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+                            <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+                            <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+                        </svg>
+                    </button>
+                    <div id="spPolishOverlay" class="polish-overlay" style="display: none;">
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        Polishing...
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label for="userprompt" class="form-label mb-0">User Prompt:</label>
+                </div>
+                <div class="ai-input-wrapper position-relative">
+                    <textarea id="userprompt" class="form-control" rows="5" style="white-space: pre; overflow-x: auto; resize: none; padding-right: 72px; padding-bottom: 26px;" placeholder="Enter user prompt here" th:text="${prompt}"></textarea>
+                    <button type="button" id="polishBtn" class="ai-btn ai-btn-corner" title="AI Polish" aria-label="AI Polish" style="display: none;">
+                        <svg id="polishIcon" class="ai-icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2c.8 5.2 4.8 9.2 10 10-5.2.8-9.2 4.8-10 10-.8-5.2-4.8-9.2-10-10 5.2-.8 9.2-4.8 10-10z"></path>
+                        </svg>
+                        <svg id="polishStopIcon" class="ai-stop-icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                            <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                        </svg>
+                    </button>
+                    <button type="button" id="undoBtn" class="btn btn-sm btn-outline-secondary" style="display: none; position: absolute; right: 74px; bottom: 8px; z-index: 5;">Undo</button>
+                    <button type="button" id="redoBtn" class="btn btn-sm btn-outline-secondary" style="display: none; position: absolute; right: 135px; bottom: 8px; z-index: 5;">Redo</button>
+                    <button type="button" class="zoom-btn" data-zoom-target="userprompt" title="Zoom / Edit in large view">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+                            <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+                            <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+                            <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+                        </svg>
+                    </button>
+                    <div id="polishOverlay" class="polish-overlay" style="display: none;">
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        Polishing...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Generation Console Modal (streams backend console log via WebSocket) -->
+    <div class="modal fade" id="consoleModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog" style="width: 90%; max-width: none; margin: 5vh auto; height: 90vh;">
+            <div class="modal-content" style="height: 100%; display: flex; flex-direction: column;">
+                <div class="modal-header">
+                    <h5 class="modal-title">Generation Console</h5>
+                    <div class="ms-auto d-flex align-items-center gap-3">
+                        <span id="consoleElapsed" class="text-muted small" style="font-variant-numeric: tabular-nums;">00:00</span>
+                        <span id="consoleStatusBadge" class="badge bg-secondary">Idle</span>
+                    </div>
+                </div>
+                <div class="px-3 pt-2 pb-1">
+                    <div class="progress" style="height: 6px;">
+                        <div id="consoleProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;"></div>
+                    </div>
+                    <div id="consoleSteps" class="d-flex justify-content-between mt-2 small text-muted">
+                        <span class="console-step" data-step="prepare">Prepare</span>
+                        <span class="console-step" data-step="jrxml">JRXML</span>
+                        <span class="console-step" data-step="compile">Compile</span>
+                        <span class="console-step" data-step="fill">Fill</span>
+                        <span class="console-step" data-step="export">Export</span>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom flex-wrap">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Log filter">
+                        <button type="button" class="btn btn-outline-light active" data-filter="all">All</button>
+                        <button type="button" class="btn btn-outline-light" data-filter="info">Info</button>
+                        <button type="button" class="btn btn-outline-light" data-filter="success">Success</button>
+                        <button type="button" class="btn btn-outline-light" data-filter="warn">Warn</button>
+                        <button type="button" class="btn btn-outline-light" data-filter="error">Error</button>
+                    </div>
+                    <div class="ms-auto d-flex align-items-center gap-2">
+                        <button id="consoleCopyBtn" type="button" class="btn btn-sm btn-outline-light">Copy</button>
+                        <button id="consoleClearBtn" type="button" class="btn btn-sm btn-outline-light">Clear</button>
+                        <button id="consoleDownloadBtn" type="button" class="btn btn-sm btn-outline-light">Download</button>
+                        <div class="form-check form-switch mb-0 ms-2">
+                            <input id="consoleAutoScroll" class="form-check-input" type="checkbox" checked>
+                            <label class="form-check-label small text-muted" for="consoleAutoScroll">Auto-scroll</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-body" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; background: #0d1117; padding: 4px;">
+                    <div id="consoleLog" class="console-log"></div>
+                </div>
+                <div class="modal-footer">
+                    <button id="consoleStopBtn" type="button" class="btn btn-danger">
+                        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Stop Generate Report
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal fade" id="resultModal" tabindex="-1" aria-labelledby="resultModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-fullscreen" style="width: 90%; height: 80%; margin: 5%;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="resultModalLabel">Generated Report</h5>
+                </div>
+                <div class="modal-body" style="max-height: 70vh; overflow: hidden;">
+                    <div class="row" style="height: 100%;">
+                        <div class="col-md-6">
+                            <h6>JRXML</h6>
+                            <pre id="jrxmlContent" style="white-space: pre; overflow-x: auto; overflow-y: auto; font-family: monospace; height: 60vh;"></pre>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>PDF Viewer</h6>
+                            <embed id="pdfViewer" src="" type="application/pdf" style="width: 100%; height: 60vh; border: none;"></embed>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="modalFooterBtn" type="button" class="btn btn-danger">
+                        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Stop Generate Report
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Zoom modal: large-view editor, live-synced to the source textarea -->
+    <div class="modal fade" id="zoomModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-fullscreen">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="zoomModalTitle">Edit Content</h5>
+                    <div class="ms-auto d-flex align-items-center gap-2">
+                        <button type="button" id="zoomPolishBtn" class="ai-btn" title="AI Polish" aria-label="AI Polish" style="display: none;">
+                            <svg class="ai-icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 2c.8 5.2 4.8 9.2 10 10-5.2.8-9.2 4.8-10 10-.8-5.2-4.8-9.2-10-10 5.2-.8 9.2-4.8 10-10z"></path>
+                            </svg>
+                            <svg class="ai-stop-icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                                <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                            </svg>
+                        </button>
+                        <button type="button" id="zoomSpPolishBtn" class="ai-btn" title="AI Polish (grammar only)" aria-label="AI Polish" style="display: none;">
+                            <svg class="ai-icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 2c.8 5.2 4.8 9.2 10 10-5.2.8-9.2 4.8-10 10-.8-5.2-4.8-9.2-10-10 5.2-.8 9.2-4.8 10-10z"></path>
+                            </svg>
+                            <svg class="ai-stop-icon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                                <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                            </svg>
+                        </button>
+                        <button type="button" id="zoomUndoBtn" class="btn btn-sm btn-outline-secondary" style="display: none;">Undo</button>
+                        <button type="button" id="zoomRedoBtn" class="btn btn-sm btn-outline-secondary" style="display: none;">Redo</button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                </div>
+                <div class="modal-body" style="padding: 0;">
+                    <div class="position-relative">
+                        <textarea id="zoomTextarea" class="form-control" wrap="off"
+                            style="height: calc(100vh - 140px); border: none; font-family: monospace; resize: none; white-space: pre; overflow-x: auto;"></textarea>
+                        <div id="zoomPolishOverlay" class="polish-overlay" style="display: none;">
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            Polishing...
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let abortController = null;
+        let currentRequestId = null;
+        // WebSocket streaming the backend console log into the Generation Console modal
+        let consoleWebSocket = null;
+        // Snapshot of the User Prompt before the last AI polish, for Undo support
+        let originalPrompt = null;
+        // Polished User Prompt result, for Redo support
+        let polishedPrompt = null;
+        // Abort controller + requestId for the in-flight AI polish, so Stop Polish can cancel it
+        let polishAbortController = null;
+        let polishRequestId = null;
+        // Snapshot of the System Prompt before the last grammar polish, for Undo support
+        let spOriginalPrompt = null;
+        // Polished System Prompt result, for Redo support
+        let spPolishedPrompt = null;
+        // Which undo/redo state each polishable field is in: 'polished' | 'original' | null
+        const undoRedoStep = { userprompt: null, systemprompt: null };
+        // Abort controller + requestId for the in-flight grammar polish, so Stop can cancel it
+        let spPolishAbortController = null;
+        let spPolishRequestId = null;
+        // Interactive console state
+        let consoleLogText = '';
+        let consoleStartTime = 0;
+        let consoleTimerId = null;
+        let activeFilter = 'all';
+        const consoleStepOrder = ['prepare', 'jrxml', 'compile', 'fill', 'export'];
+
+        // Hard cap for a single Generate Report request (safety net; the backend is
+        // itself bounded by deepseek.generate-deadline-ms and app.jrxml.max-fix-attempts).
+        const GENERATION_TIMEOUT_MS = 15 * 60 * 1000;
+        // Timestamp of the last console log line received, for the stall hint
+        let lastLogTime = 0;
+        // Throttle the stall hint so it is not repeated constantly
+        let lastStallHintTime = 0;
+        // Timer id for the client-side generation watchdog
+        let generationTimeoutId = null;
+        // Set when the watchdog aborts a generation (vs. the user clicking Stop)
+        let generationTimedOut = false;
+
+        // Per-section Save configuration (XML Data / Knowledge / System Prompt / User Prompt)
+        const sections = {
+            xmlData: {
+                selectId: 'xmlDataSelect',
+                textareaId: 'xmlData',
+                saveBtnId: 'xmlDataSaveBtn',
+                apiUrl: id => `/api/xmldata/${id}`,
+                label: 'XML data'
+            },
+            knowledge: {
+                selectId: 'knowledgeSelect',
+                textareaId: 'knowledge',
+                saveBtnId: 'knowledgeSaveBtn',
+                apiUrl: id => `/api/knowledge/${id}`,
+                label: 'knowledge'
+            },
+            systemPrompt: {
+                selectId: 'systemPromptSelect',
+                textareaId: 'systemprompt',
+                saveBtnId: 'systemPromptSaveBtn',
+                apiUrl: id => `/api/systemprompt/${id}`,
+                label: 'system prompt'
+            },
+            userPrompt: {
+                selectId: 'userPromptSelect',
+                textareaId: 'userprompt',
+                saveBtnId: 'userPromptSaveBtn',
+                apiUrl: id => `/api/userprompt/${id}`,
+                label: 'user prompt'
+            }
+        };
+
+        // Track the baseline (originalContent) of each section's selected record
+        const sectionState = {};
+
+        function newRequestId() {
+            if (window.crypto && crypto.randomUUID) {
+                return crypto.randomUUID();
+            }
+            return 'req-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+        }
+
+        function setModalFooterClose() {
+            const btn = document.getElementById('modalFooterBtn');
+            btn.classList.remove('btn-danger');
+            btn.classList.add('btn-secondary');
+            btn.innerHTML = 'Close';
+        }
+
+        // Generate Report is only available when all 4 content fields are non-empty
+        // AND no AI polish is currently running.
+        function updateGenerateButtonState() {
+            const allFilled = ['xmlData', 'knowledge', 'systemprompt', 'userprompt']
+                .every(id => document.getElementById(id).value.trim() !== '');
+            const polishRunning = !!polishAbortController || !!spPolishAbortController;
+            document.getElementById('generate').disabled = !allFilled || polishRunning;
+        }
+
+        function resetGenerateUi() {
+            updateGenerateButtonState();
+            setModalFooterClose();
+            abortController = null;
+            currentRequestId = null;
+        }
+
+        // ---- Console log streaming via WebSocket ----
+
+        function connectConsoleWebSocket(sessionId) {
+            if (consoleWebSocket && consoleWebSocket.readyState === WebSocket.OPEN) {
+                return Promise.resolve(); // Already connected
+            }
+            return new Promise(function(resolve) {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/xmldatawebsocket?id=${sessionId}`;
+                consoleWebSocket = new WebSocket(wsUrl);
+
+                consoleWebSocket.onopen = function(event) {
+                    appendLogEntry('Console WebSocket connected');
+                    resolve();
+                };
+                consoleWebSocket.onmessage = function(event) {
+                    appendLogEntry(event.data);
+                };
+                consoleWebSocket.onclose = function(event) {
+                    appendLogEntry('Console WebSocket disconnected');
+                    consoleWebSocket = null;
+                };
+                consoleWebSocket.onerror = function(error) {
+                    appendLogEntry('Console WebSocket error');
+                };
+
+                // Safety net: if the socket never opens (e.g. backend unavailable),
+                // still let generation proceed after a short grace period - the
+                // console just won't stream, but Stop still works.
+                setTimeout(function() {
+                    if (consoleWebSocket && consoleWebSocket.readyState !== WebSocket.OPEN) {
+                        resolve();
+                    }
+                }, 5000);
+            });
+        }
+
+        function disconnectConsoleWebSocket() {
+            if (consoleWebSocket) {
+                consoleWebSocket.close();
+                consoleWebSocket = null;
+            }
+        }
+
+        // ---- Interactive console rendering ----
+
+        function classifyLevel(line) {
+            if (/ERROR|error:|failed|Failed|Exception|is not valid|Giving up|COMPILATION\/FILL\/EXPORT ERROR|JASPERREPORTS COMPILATION ERROR|ERROR TYPE/.test(line)) {
+                return 'error';
+            }
+            if (/WARN|warning|Attempting AI fix|AI fix failed|retrying|AI suggested new JRXML version|Maximum attempts/.test(line)) {
+                return 'warn';
+            }
+            if (/successful|COMPLETED SUCCESSFULLY|Step 1 completed|Step 2 completed|Step 3 completed/.test(line)) {
+                return 'success';
+            }
+            return 'info';
+        }
+
+        function setStepState(step, state) {
+            const el = document.querySelector(`.console-step[data-step="${step}"]`);
+            if (!el) return;
+            el.classList.remove('active', 'done', 'failed');
+            if (state === 'active') el.classList.add('active');
+            else if (state === 'done') el.classList.add('done');
+            else if (state === 'failed') el.classList.add('failed');
+        }
+
+        function setProgress(percent) {
+            const bar = document.getElementById('consoleProgressBar');
+            if (bar) bar.style.width = percent + '%';
+        }
+
+        function setStatusBadge(text, cls) {
+            const badge = document.getElementById('consoleStatusBadge');
+            if (!badge) return;
+            badge.textContent = text;
+            badge.className = 'badge ' + cls;
+        }
+
+        function advanceTo(stepIndex) {
+            for (let i = 0; i < consoleStepOrder.length; i++) {
+                if (i < stepIndex) setStepState(consoleStepOrder[i], 'done');
+                else if (i === stepIndex) setStepState(consoleStepOrder[i], 'active');
+                else setStepState(consoleStepOrder[i], '');
+            }
+        }
+
+        function updateStepProgress(line) {
+            if (line.indexOf('GENERATE REQUEST RECEIVED') !== -1) {
+                advanceTo(0);
+                setProgress(5);
+                setStatusBadge('Running', 'bg-primary');
+            } else if (line.indexOf('STARTING COMPLETE REPORT GENERATION PROCESS') !== -1 ||
+                       line.indexOf('GENERATING JRXML VIA DEEPSEEK') !== -1) {
+                advanceTo(1);
+                setProgress(20);
+                setStatusBadge('Running', 'bg-primary');
+            } else if (line.indexOf('JRXML generation successful') !== -1 ||
+                       line.indexOf('Step 1 completed') !== -1) {
+                advanceTo(2);
+                setProgress(40);
+            } else if (line.indexOf('STARTING JASPERREPORTS PROCESSING') !== -1 ||
+                       line.indexOf('Compiling JRXML report') !== -1) {
+                advanceTo(2);
+                setProgress(40);
+            } else if (line.indexOf('Compile took') !== -1) {
+                advanceTo(3);
+                setProgress(60);
+            } else if (line.indexOf('Filling report') !== -1) {
+                advanceTo(3);
+                setProgress(60);
+            } else if (line.indexOf('Fill took') !== -1) {
+                advanceTo(4);
+                setProgress(80);
+            } else if (line.indexOf('Exporting to PDF') !== -1) {
+                advanceTo(4);
+                setProgress(80);
+            } else if (line.indexOf('Export took') !== -1 ||
+                       line.indexOf('PDF generation successful') !== -1 ||
+                       line.indexOf('Step 3 completed') !== -1 ||
+                       line.indexOf('REPORT GENERATION PROCESS COMPLETED SUCCESSFULLY') !== -1) {
+                for (const s of consoleStepOrder) setStepState(s, 'done');
+                setProgress(100);
+                setStatusBadge('Done', 'bg-success');
+            } else if (/Maximum attempts reached|Giving up|PDF generation interrupted|is not valid|not valid/.test(line)) {
+                // Only terminal failure markers flip the status to Failed; transient
+                // errors ("Error calling DeepSeek API", "Attempting AI fix", retries)
+                // must NOT bounce the badge while generation is still retrying.
+                const activeEl = document.querySelector('.console-step.active');
+                if (activeEl) {
+                    activeEl.classList.remove('active');
+                    activeEl.classList.add('failed');
+                }
+                setStatusBadge('Failed', 'bg-danger');
+            }
+        }
+
+        function appendLogEntry(message) {
+            if (message == null) return;
+            lastLogTime = Date.now();
+            consoleLogText += message + '\n';
+
+            const level = classifyLevel(message);
+            const log = document.getElementById('consoleLog');
+            if (!log) return;
+
+            const entry = document.createElement('div');
+            entry.className = 'log-entry log-' + level;
+            entry.setAttribute('data-level', level);
+
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'log-time';
+            timeSpan.textContent = new Date().toLocaleTimeString('en-GB');
+
+            entry.appendChild(timeSpan);
+            entry.appendChild(document.createTextNode(message));
+            log.appendChild(entry);
+
+            if (activeFilter !== 'all' && activeFilter !== level) {
+                entry.style.display = 'none';
+            }
+
+            if (document.getElementById('consoleAutoScroll').checked) {
+                const body = log.parentElement;
+                body.scrollTop = body.scrollHeight;
+            }
+
+            updateStepProgress(message);
+        }
+
+        function setActiveFilter(filter) {
+            activeFilter = filter;
+            document.querySelectorAll('[data-filter]').forEach(function(btn) {
+                btn.classList.toggle('active', btn.getAttribute('data-filter') === filter);
+            });
+            applyFilter();
+        }
+
+        function applyFilter() {
+            document.querySelectorAll('#consoleLog .log-entry').forEach(function(entry) {
+                const level = entry.getAttribute('data-level');
+                entry.style.display = (activeFilter === 'all' || activeFilter === level) ? '' : 'none';
+            });
+        }
+
+        function resetConsole() {
+            const log = document.getElementById('consoleLog');
+            if (log) log.innerHTML = '';
+            consoleLogText = '';
+            for (const s of consoleStepOrder) setStepState(s, '');
+            setProgress(0);
+            setStatusBadge('Running', 'bg-primary');
+            document.getElementById('consoleElapsed').textContent = '00:00';
+            document.getElementById('consoleAutoScroll').checked = true;
+            setActiveFilter('all');
+        }
+
+        function startConsoleTimer() {
+            consoleStartTime = Date.now();
+            lastLogTime = Date.now();
+            lastStallHintTime = 0;
+            if (consoleTimerId) clearInterval(consoleTimerId);
+            consoleTimerId = setInterval(function() {
+                const elapsed = Math.floor((Date.now() - consoleStartTime) / 1000);
+                const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+                const ss = String(elapsed % 60).padStart(2, '0');
+                const el = document.getElementById('consoleElapsed');
+                if (el) el.textContent = mm + ':' + ss;
+
+                // Stall hint: generation is running but no backend log arrived for a while
+                if (abortController && Date.now() - lastLogTime > 60000
+                        && Date.now() - lastStallHintTime > 60000) {
+                    lastStallHintTime = Date.now();
+                    appendLogEntry('No progress for a while - the AI service may be busy. You can click Stop and try again.');
+                }
+            }, 1000);
+        }
+
+        function stopConsoleTimer() {
+            if (consoleTimerId) {
+                clearInterval(consoleTimerId);
+                consoleTimerId = null;
+            }
+        }
+
+        // Stop the running generation: abort the fetch and ask the backend to interrupt DeepSeek
+        function stopCurrentRequest() {
+            if (!abortController) return;
+            abortController.abort();
+            const requestId = currentRequestId;
+            if (requestId) {
+                fetch('/api/ai-reporting-studio/stop', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ requestId: requestId })
+                }).catch(function(err) {
+                    console.error('Error calling stop endpoint:', err);
+                });
+            }
+        }
+
+        function adjustHeight(textarea) {
+            const top = textarea.getBoundingClientRect().top;
+            const bottomGap = 16; // small margin from the bottom of the viewport
+            const available = window.innerHeight - top - bottomGap;
+            textarea.style.height = Math.max(80, available) + 'px';
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const userPromptTextarea = document.getElementById('userprompt');
+            const systemPromptTextarea = document.getElementById('systemprompt');
+
+            document.querySelectorAll('textarea:not(#zoomTextarea)').forEach(function(textarea) {
+                adjustHeight(textarea);
+                textarea.addEventListener('input', function() {
+                    adjustHeight(this);
+                });
+            });
+
+            // Re-fit textareas to the current page height when the window resizes
+            window.addEventListener('resize', function() {
+                document.querySelectorAll('textarea:not(#zoomTextarea)').forEach(adjustHeight);
+            });
+
+            // Load XML data, system prompts, knowledge, and user prompts for dropdowns
+            loadXmlData();
+            loadSystemPrompts();
+            loadKnowledge();
+            loadUserPrompts();
+
+            // Event listeners for dropdown changes, textarea edits, and Save buttons
+            Object.keys(sections).forEach(key => {
+                const section = sections[key];
+                sectionState[key] = { originalContent: '', originalTitle: '' };
+
+                const select = document.getElementById(section.selectId);
+                const textarea = document.getElementById(section.textareaId);
+                const saveBtn = document.getElementById(section.saveBtnId);
+
+                select.addEventListener('change', function() {
+                    const selectedOption = this.options[this.selectedIndex];
+                    if (selectedOption && selectedOption.value !== '') {
+                        // Capture baseline of the newly selected record
+                        sectionState[key].originalContent = selectedOption.getAttribute('data-content') || '';
+                        sectionState[key].originalTitle = selectedOption.textContent || '';
+                        // Auto-populate the textarea with the selected content
+                        if (sectionState[key].originalContent) {
+                            textarea.value = sectionState[key].originalContent;
+                            adjustHeight(textarea);
+                        }
+                    } else {
+                        // Deselected
+                        sectionState[key].originalContent = '';
+                        sectionState[key].originalTitle = '';
+                    }
+                    // Switching User Prompt selections resets the Revert snapshot
+                    // so it never reverts to stale content from a previous record
+                    if (key === 'userPrompt') {
+                        resetPolishState();
+                    }
+                    // Same for the System Prompt grammar polish Revert snapshot
+                    if (key === 'systemPrompt') {
+                        resetSpPolishState();
+                    }
+                    updateSaveButtonState(key);
+                    updatePolishButtonState();
+                    updateSpPolishButtonState();
+                    updateGenerateButtonState();
+                });
+
+                textarea.addEventListener('input', function() {
+                    updateSaveButtonState(key);
+                    updatePolishButtonState();
+                    updateSpPolishButtonState();
+                    updateGenerateButtonState();
+                });
+
+                saveBtn.addEventListener('click', function() {
+                    saveSection(key);
+                });
+            });
+
+            // ---- Zoom modal: large view + live sync for each textarea ----
+            let zoomSourceId = null;
+            const zoomTextarea = document.getElementById('zoomTextarea');
+            const zoomModalEl = document.getElementById('zoomModal');
+            const zoomModal = new bootstrap.Modal(zoomModalEl);
+
+            // sections keys differ from textareaIds, so match through a helper
+            function findSectionKey(textareaId) {
+                return Object.keys(sections).find(k => sections[k].textareaId === textareaId) || null;
+            }
+
+            function syncZoomToSource() {
+                if (!zoomSourceId) return;
+                const source = document.getElementById(zoomSourceId);
+                source.value = zoomTextarea.value;
+                adjustHeight(source);
+                const key = findSectionKey(zoomSourceId);
+                if (key) {
+                    updateSaveButtonState(key);
+                    updatePolishButtonState();
+                    updateSpPolishButtonState();
+                    updateGenerateButtonState();
+                }
+            }
+
+            document.querySelectorAll('.zoom-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    zoomSourceId = this.getAttribute('data-zoom-target');
+                    const source = document.getElementById(zoomSourceId);
+                    const key = findSectionKey(zoomSourceId);
+                    const label = key ? sections[key].label : zoomSourceId;
+                    document.getElementById('zoomModalTitle').textContent = 'Edit ' + label;
+                    zoomTextarea.value = source.value;
+                    zoomModal.show();
+                    zoomTextarea.focus();
+                    updatePolishButtonState(); // show/hide the modal AI polish icon
+                    updateSpPolishButtonState(); // show/hide the modal grammar polish icon
+                    renderUndoRedoState(); // show/hide the modal Undo/Redo buttons
+                });
+            });
+
+            zoomTextarea.addEventListener('input', syncZoomToSource);
+
+            zoomModalEl.addEventListener('hidden.bs.modal', function() {
+                syncZoomToSource(); // final sync in case of close without further input
+                zoomSourceId = null;
+                updatePolishButtonState(); // hide the modal AI polish icon
+                updateSpPolishButtonState(); // hide the modal grammar polish icon
+                renderUndoRedoState(); // hide the modal Undo/Redo buttons
+            });
+
+            // AI polish: enrich the User Prompt into the structured report format
+            const polishBtn = document.getElementById('polishBtn');
+            const undoBtn = document.getElementById('undoBtn');
+            const redoBtn = document.getElementById('redoBtn');
+            const zoomPolishBtn = document.getElementById('zoomPolishBtn');
+            const polishButtons = [polishBtn, zoomPolishBtn];
+
+            // AI grammar polish: refine only the grammar of the System Prompt
+            const spPolishBtn = document.getElementById('spPolishBtn');
+            const spUndoBtn = document.getElementById('spUndoBtn');
+            const spRedoBtn = document.getElementById('spRedoBtn');
+            const zoomSpPolishBtn = document.getElementById('zoomSpPolishBtn');
+            const zoomUndoBtn = document.getElementById('zoomUndoBtn');
+            const zoomRedoBtn = document.getElementById('zoomRedoBtn');
+            const spPolishButtons = [spPolishBtn, zoomSpPolishBtn];
+
+            // Apply the initial enable/disable state for the AI Polish and Generate buttons
+            updatePolishButtonState();
+            updateSpPolishButtonState();
+            renderUndoRedoState();
+            updateGenerateButtonState();
+
+            function resetPolishState() {
+                originalPrompt = null;
+                polishedPrompt = null;
+                undoRedoStep.userprompt = null;
+                renderUndoRedoState();
+            }
+
+            // While running, show the red stop state on every polish button
+            function setPolishRunning(running) {
+                polishButtons.forEach(function(btn) {
+                    btn.classList.toggle('running', running);
+                    const icon = btn.querySelector('.ai-icon');
+                    const stopIcon = btn.querySelector('.ai-stop-icon');
+                    if (icon) icon.style.display = running ? 'none' : '';
+                    if (stopIcon) stopIcon.style.display = running ? '' : 'none';
+                    btn.style.display = ''; // keep visible while running (stop button)
+                });
+
+                // Lock the text areas while polishing and show the "Polishing..." overlay
+                userPromptTextarea.disabled = running;
+                zoomTextarea.disabled = running;
+                const pageOverlay = document.getElementById('polishOverlay');
+                const zoomOverlay = document.getElementById('zoomPolishOverlay');
+                if (pageOverlay) pageOverlay.style.display = running ? '' : 'none';
+                if (zoomOverlay) zoomOverlay.style.display = running ? '' : 'none';
+                updateGenerateButtonState(); // disable Generate while polishing
+            }
+
+            // The AI polish icon is hidden unless XML Data is non-empty AND the
+            // User Prompt has content (or while a polish is running).
+            // In the zoom modal it additionally requires the User Prompt to be zoomed.
+            function updatePolishButtonState() {
+                const running = !!polishAbortController;
+                const spRunning = !!spPolishAbortController;
+                const xmlDataOk = document.getElementById('xmlData').value.trim() !== '';
+                const userPromptOk = userPromptTextarea.value.trim() !== '';
+                const usable = running || (xmlDataOk && userPromptOk);
+
+                polishBtn.style.display = (usable && !spRunning) ? '' : 'none';
+
+                if (zoomPolishBtn) {
+                    zoomPolishBtn.style.display = (zoomSourceId === 'userprompt' && usable && !spRunning) ? '' : 'none';
+                }
+            }
+
+            function onPolishClick() {
+                // If a polish is already running, this click stops it
+                if (polishAbortController) {
+                    polishAbortController.abort();
+                    const requestId = polishRequestId;
+                    if (requestId) {
+                        fetch('/api/ai-reporting-studio/stop', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ requestId: requestId })
+                        }).catch(function(err) {
+                            console.error('Error calling stop endpoint:', err);
+                        });
+                    }
+                    return;
+                }
+
+                const userPrompt = userPromptTextarea.value;
+                if (!userPrompt.trim()) {
+                    showToast('Please enter User Prompt content before AI polishing', 'warning');
+                    return;
+                }
+
+                // Snapshot the current content so Revert can restore it later
+                originalPrompt = userPrompt;
+
+                // Switch the buttons to an actionable "Stop Polish" state (stay visible)
+                polishRequestId = newRequestId();
+                polishAbortController = new AbortController();
+                setPolishRunning(true);
+
+                fetch('/api/ai-reporting-studio/polish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: polishAbortController.signal,
+                    body: JSON.stringify({ content: userPrompt, xmlData: document.getElementById('xmlData').value, requestId: polishRequestId })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        // Prefer a friendly {"error": "..."} body, fall back to raw text
+                        return response.text().then(text => {
+                            let friendlyMsg = `HTTP ${response.status}`;
+                            try {
+                                const data = JSON.parse(text);
+                                if (data && data.error) friendlyMsg = data.error;
+                            } catch (e) {
+                                if (text && text.trim()) friendlyMsg = text.trim();
+                            }
+                            throw new Error(friendlyMsg);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(result => {
+                    if (!result.content) {
+                        throw new Error('AI returned empty content');
+                    }
+                    // Auto-fill the polished content back into the textarea
+                    userPromptTextarea.value = result.content;
+                    if (zoomSourceId === 'userprompt') {
+                        zoomTextarea.value = result.content;
+                        zoomTextarea.scrollTop = 0;
+                    }
+                    adjustHeight(userPromptTextarea);
+                    updateSaveButtonState('userPrompt');
+                    updatePolishButtonState();
+                    polishedPrompt = result.content;   // redo target
+                    undoRedoStep.userprompt = 'polished';
+                    renderUndoRedoState();
+                    showToast('AI polishing complete, please review and edit the content', 'success');
+                })
+                .catch(error => {
+                    if (error.name === 'AbortError') {
+                        showToast('AI polishing stopped', 'info');
+                        return;
+                    }
+                    console.error('Error polishing user prompt:', error);
+                    showErrorAlert('AI polishing failed', error.message || 'Network connection failed, please check your network and try again');
+                })
+                .finally(() => {
+                    polishAbortController = null;
+                    polishRequestId = null;
+                    setPolishRunning(false);
+                    updatePolishButtonState();
+                });
+            }
+
+            polishBtn.addEventListener('click', onPolishClick);
+            zoomPolishBtn.addEventListener('click', onPolishClick);
+
+            // Undo: restore the User Prompt to its pre-polish content
+            undoBtn.addEventListener('click', function() {
+                if (polishAbortController) return;
+                userPromptTextarea.value = originalPrompt || '';
+                if (zoomSourceId === 'userprompt') zoomTextarea.value = userPromptTextarea.value;
+                adjustHeight(userPromptTextarea);
+                updateSaveButtonState('userPrompt');
+                updatePolishButtonState();
+                undoRedoStep.userprompt = 'original';
+                renderUndoRedoState();
+                showToast('Undo: restored the content before polishing', 'info');
+            });
+
+            // Redo: re-apply the polished User Prompt content
+            redoBtn.addEventListener('click', function() {
+                if (polishAbortController) return;
+                userPromptTextarea.value = polishedPrompt || '';
+                if (zoomSourceId === 'userprompt') zoomTextarea.value = userPromptTextarea.value;
+                adjustHeight(userPromptTextarea);
+                updateSaveButtonState('userPrompt');
+                updatePolishButtonState();
+                undoRedoStep.userprompt = 'polished';
+                renderUndoRedoState();
+                showToast('Redo: re-applied the polished content', 'info');
+            });
+
+            // ---- System Prompt grammar polish (grammar-only refinement) ----
+
+            function resetSpPolishState() {
+                spOriginalPrompt = null;
+                spPolishedPrompt = null;
+                undoRedoStep.systemprompt = null;
+                renderUndoRedoState();
+            }
+
+            // Keep the page + zoom modal Undo/Redo buttons in sync with undoRedoStep
+            function renderUndoRedoState() {
+                ['userprompt', 'systemprompt'].forEach(function(key) {
+                    const step = undoRedoStep[key];
+                    const pageUndo = key === 'userprompt' ? undoBtn : spUndoBtn;
+                    const pageRedo = key === 'userprompt' ? redoBtn : spRedoBtn;
+                    pageUndo.style.display = (step === 'polished') ? '' : 'none';
+                    pageRedo.style.display = (step === 'original') ? '' : 'none';
+                });
+                // The modal pair acts on the currently zoomed field only
+                const inModalKey = (zoomSourceId === 'userprompt' || zoomSourceId === 'systemprompt') ? zoomSourceId : null;
+                const mStep = inModalKey ? undoRedoStep[inModalKey] : null;
+                zoomUndoBtn.style.display = (mStep === 'polished') ? '' : 'none';
+                zoomRedoBtn.style.display = (mStep === 'original') ? '' : 'none';
+            }
+
+            // While running, show the red stop state on every grammar polish button
+            function setSpPolishRunning(running) {
+                spPolishButtons.forEach(function(btn) {
+                    btn.classList.toggle('running', running);
+                    const icon = btn.querySelector('.ai-icon');
+                    const stopIcon = btn.querySelector('.ai-stop-icon');
+                    if (icon) icon.style.display = running ? 'none' : '';
+                    if (stopIcon) stopIcon.style.display = running ? '' : 'none';
+                    btn.style.display = ''; // keep visible while running (stop button)
+                });
+
+                // Lock the text areas while polishing and show the "Polishing..." overlay
+                systemPromptTextarea.disabled = running;
+                zoomTextarea.disabled = running;
+                const pageOverlay = document.getElementById('spPolishOverlay');
+                const zoomOverlay = document.getElementById('zoomPolishOverlay');
+                if (pageOverlay) pageOverlay.style.display = running ? '' : 'none';
+                if (zoomOverlay) zoomOverlay.style.display = running ? '' : 'none';
+                updateGenerateButtonState(); // disable Generate while grammar polishing
+            }
+
+            // The grammar polish icon is shown whenever the System Prompt has content
+            // (or while a polish is running). In the zoom modal it additionally
+            // requires the System Prompt to be zoomed.
+            function updateSpPolishButtonState() {
+                const running = !!spPolishAbortController;
+                const userRunning = !!polishAbortController;
+                const systemPromptOk = systemPromptTextarea.value.trim() !== '';
+                const spUsable = running || systemPromptOk;
+
+                spPolishBtn.style.display = (spUsable && !userRunning) ? '' : 'none';
+
+                if (zoomSpPolishBtn) {
+                    zoomSpPolishBtn.style.display = (zoomSourceId === 'systemprompt' && spUsable && !userRunning) ? '' : 'none';
+                }
+            }
+
+            function spOnPolishClick() {
+                // If a grammar polish is already running, this click stops it
+                if (spPolishAbortController) {
+                    spPolishAbortController.abort();
+                    const requestId = spPolishRequestId;
+                    if (requestId) {
+                        fetch('/api/ai-reporting-studio/stop', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ requestId: requestId })
+                        }).catch(function(err) {
+                            console.error('Error calling stop endpoint:', err);
+                        });
+                    }
+                    return;
+                }
+
+                const systemPrompt = systemPromptTextarea.value;
+                if (!systemPrompt.trim()) {
+                    showToast('Please enter System Prompt content before AI polishing', 'warning');
+                    return;
+                }
+
+                // Snapshot the current content so Revert can restore it later
+                spOriginalPrompt = systemPrompt;
+
+                // Switch the buttons to an actionable "Stop Polish" state (stay visible)
+                spPolishRequestId = newRequestId();
+                spPolishAbortController = new AbortController();
+                setSpPolishRunning(true);
+
+                fetch('/api/ai-reporting-studio/polish-grammar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: spPolishAbortController.signal,
+                    body: JSON.stringify({ content: systemPrompt, requestId: spPolishRequestId })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        // Prefer a friendly {"error": "..."} body, fall back to raw text
+                        return response.text().then(text => {
+                            let friendlyMsg = `HTTP ${response.status}`;
+                            try {
+                                const data = JSON.parse(text);
+                                if (data && data.error) friendlyMsg = data.error;
+                            } catch (e) {
+                                if (text && text.trim()) friendlyMsg = text.trim();
+                            }
+                            throw new Error(friendlyMsg);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(result => {
+                    if (!result.content) {
+                        throw new Error('AI returned empty content');
+                    }
+                    // Auto-fill the refined content back into the textarea
+                    systemPromptTextarea.value = result.content;
+                    if (zoomSourceId === 'systemprompt') {
+                        zoomTextarea.value = result.content;
+                        zoomTextarea.scrollTop = 0;
+                    }
+                    adjustHeight(systemPromptTextarea);
+                    updateSaveButtonState('systemPrompt');
+                    updateSpPolishButtonState();
+                    spPolishedPrompt = result.content; // redo target
+                    undoRedoStep.systemprompt = 'polished';
+                    renderUndoRedoState();
+                    showToast('Grammar polishing complete, please review and edit the content', 'success');
+                })
+                .catch(error => {
+                    if (error.name === 'AbortError') {
+                        showToast('Grammar polishing stopped', 'info');
+                        return;
+                    }
+                    console.error('Error polishing system prompt:', error);
+                    showErrorAlert('Grammar polishing failed', error.message || 'Network connection failed, please check your network and try again');
+                })
+                .finally(() => {
+                    spPolishAbortController = null;
+                    spPolishRequestId = null;
+                    setSpPolishRunning(false);
+                    updateSpPolishButtonState();
+                });
+            }
+
+            spPolishBtn.addEventListener('click', spOnPolishClick);
+            zoomSpPolishBtn.addEventListener('click', spOnPolishClick);
+
+            // Undo: restore the System Prompt to its pre-polish content
+            spUndoBtn.addEventListener('click', function() {
+                if (spPolishAbortController) return;
+                systemPromptTextarea.value = spOriginalPrompt || '';
+                if (zoomSourceId === 'systemprompt') zoomTextarea.value = systemPromptTextarea.value;
+                adjustHeight(systemPromptTextarea);
+                updateSaveButtonState('systemPrompt');
+                updateSpPolishButtonState();
+                undoRedoStep.systemprompt = 'original';
+                renderUndoRedoState();
+                showToast('Undo: restored the content before grammar polishing', 'info');
+            });
+
+            // Redo: re-apply the polished System Prompt content
+            spRedoBtn.addEventListener('click', function() {
+                if (spPolishAbortController) return;
+                systemPromptTextarea.value = spPolishedPrompt || '';
+                if (zoomSourceId === 'systemprompt') zoomTextarea.value = systemPromptTextarea.value;
+                adjustHeight(systemPromptTextarea);
+                updateSaveButtonState('systemPrompt');
+                updateSpPolishButtonState();
+                undoRedoStep.systemprompt = 'polished';
+                renderUndoRedoState();
+                showToast('Redo: re-applied the polished content', 'info');
+            });
+
+            // Zoom modal Undo/Redo: act on the currently zoomed field and sync back to the page
+            zoomUndoBtn.addEventListener('click', function() {
+                if (zoomSourceId === 'userprompt') {
+                    if (polishAbortController) return;
+                    zoomTextarea.value = originalPrompt || '';
+                    undoRedoStep.userprompt = 'original';
+                } else if (zoomSourceId === 'systemprompt') {
+                    if (spPolishAbortController) return;
+                    zoomTextarea.value = spOriginalPrompt || '';
+                    undoRedoStep.systemprompt = 'original';
+                } else {
+                    return;
+                }
+                zoomTextarea.scrollTop = 0;
+                syncZoomToSource(); // push to the page textarea + refresh save/polish/generate button states
+                renderUndoRedoState();
+                showToast('Undo: restored the content before polishing', 'info');
+            });
+
+            zoomRedoBtn.addEventListener('click', function() {
+                if (zoomSourceId === 'userprompt') {
+                    if (polishAbortController) return;
+                    zoomTextarea.value = polishedPrompt || '';
+                    undoRedoStep.userprompt = 'polished';
+                } else if (zoomSourceId === 'systemprompt') {
+                    if (spPolishAbortController) return;
+                    zoomTextarea.value = spPolishedPrompt || '';
+                    undoRedoStep.systemprompt = 'polished';
+                } else {
+                    return;
+                }
+                zoomTextarea.scrollTop = 0;
+                syncZoomToSource(); // push to the page textarea + refresh save/polish/generate button states
+                renderUndoRedoState();
+                showToast('Redo: re-applied the polished content', 'info');
+            });
+
+            document.getElementById('generate').addEventListener('click', function() {
+                const xmlData = document.getElementById('xmlData').value;
+                const knowledge = document.getElementById('knowledge').value;
+                const systemPrompt = document.getElementById('systemprompt').value;
+                const userPrompt = document.getElementById('userprompt').value;
+
+                // Show the Generation Console modal first, streaming backend logs via WebSocket
+                resetConsole();
+                startConsoleTimer();
+                const consoleModal = new bootstrap.Modal(document.getElementById('consoleModal'));
+                consoleModal.show();
+
+                currentRequestId = newRequestId();
+
+                abortController = new AbortController();
+                generationTimedOut = false;
+                if (generationTimeoutId) clearTimeout(generationTimeoutId);
+                generationTimeoutId = setTimeout(function() {
+                    if (abortController) {
+                        generationTimedOut = true;
+                        abortController.abort();
+                        appendLogEntry('Generation timed out after '
+                            + Math.round(GENERATION_TIMEOUT_MS / 60000)
+                            + ' minutes. The AI service may be busy - please try again.');
+                        showToast('Generation is taking too long. The AI service may be busy - click Stop and try again.', 'warning');
+                    }
+                }, GENERATION_TIMEOUT_MS);
+                document.getElementById('generate').disabled = true;
+
+                // Result modal is prepared but only shown after generation finishes
+                document.getElementById('jrxmlContent').textContent = 'Generating JRXML...';
+                document.getElementById('pdfViewer').src = '';
+
+                // Wait for the console WebSocket to be connected before sending the
+                // generate request, so no backend console lines are missed.
+                connectConsoleWebSocket(currentRequestId).then(function() {
+                    fetch('/api/ai-reporting-studio/generate', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        signal: abortController.signal,
+                        body: JSON.stringify({
+                            xmlData: xmlData,
+                            knowledge: knowledge,
+                            systemPrompt: systemPrompt,
+                            userPrompt: userPrompt,
+                            requestId: currentRequestId
+                        })
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            // Prefer the backend's friendly {"error": "..."} body, fall back to raw text
+                            return response.text().then(text => {
+                                let friendlyMsg = 'HTTP ' + response.status;
+                                try {
+                                    const data = JSON.parse(text);
+                                    if (data && data.error) friendlyMsg = data.error;
+                                } catch (e) {
+                                    if (text && text.trim()) friendlyMsg = text.trim();
+                                }
+                                throw new Error(friendlyMsg);
+                            });
+                        }
+                        if (response.headers.get('content-type') === 'application/pdf') {
+                            return response.blob().then(blob => ({ type: 'pdf', data: blob }));
+                        } else {
+                            return response.text().then(text => ({ type: 'text', data: text }));
+                        }
+                    })
+                    .then(result => {
+                        if (result.type === 'pdf') {
+                            // Success - fetch and display JRXML, then show PDF
+                            fetchJRXML();
+                            const pdfUrl = URL.createObjectURL(result.data);
+                            document.getElementById('pdfViewer').src = pdfUrl;
+                        } else {
+                            // Error - display error message in JRXML area and show alert
+                            document.getElementById('jrxmlContent').textContent = 'ERROR: PDF Generation Failed\n\n' + result.data;
+                            showErrorAlert('PDF Generation Failed', result.data);
+                            document.getElementById('pdfViewer').src = '';
+                        }
+                        // Generation finished - close console modal and show the result modal
+                        if (generationTimeoutId) { clearTimeout(generationTimeoutId); generationTimeoutId = null; }
+                        stopConsoleTimer();
+                        disconnectConsoleWebSocket();
+                        bootstrap.Modal.getInstance(document.getElementById('consoleModal')).hide();
+                        new bootstrap.Modal(document.getElementById('resultModal')).show();
+                        resetGenerateUi();
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        if (generationTimeoutId) { clearTimeout(generationTimeoutId); generationTimeoutId = null; }
+                        if (error.name === 'AbortError') {
+                            if (generationTimedOut) {
+                                // Watchdog fired: generation exceeded the hard time cap
+                                document.getElementById('jrxmlContent').textContent = 'ERROR: Generation timed out after '
+                                    + Math.round(GENERATION_TIMEOUT_MS / 60000) + ' minutes.\n\nThe AI service may be busy - please try again.';
+                                showErrorAlert('Generation timed out', 'The generation took too long. The AI service may be busy - please click Generate Report to try again.');
+                            } else {
+                                // User clicked Stop
+                                document.getElementById('jrxmlContent').textContent = 'Generation stopped by user.';
+                            }
+                            document.getElementById('pdfViewer').src = '';
+                        } else {
+                            // Display error in JRXML area
+                            document.getElementById('jrxmlContent').textContent = 'ERROR: Request Failed\n\n' + error.message;
+                            showErrorAlert('Request Failed', error.message);
+                            document.getElementById('pdfViewer').src = '';
+                        }
+                        // Generation finished - close console modal and show the result modal
+                        stopConsoleTimer();
+                        disconnectConsoleWebSocket();
+                        bootstrap.Modal.getInstance(document.getElementById('consoleModal')).hide();
+                        new bootstrap.Modal(document.getElementById('resultModal')).show();
+                        resetGenerateUi();
+                    });
+                });
+            });
+
+            // Stop the running generation from the frontend, or close the modal when idle
+            document.getElementById('modalFooterBtn').addEventListener('click', function() {
+                // While generation is running this button stops it; otherwise it closes the modal
+                if (abortController) {
+                    abortController.abort();
+                    const requestId = currentRequestId;
+                    if (requestId) {
+                        fetch('/api/ai-reporting-studio/stop', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ requestId: requestId })
+                        }).catch(function(err) {
+                            console.error('Error calling stop endpoint:', err);
+                        });
+                    }
+                    return;
+                }
+                bootstrap.Modal.getInstance(document.getElementById('resultModal')).hide();
+            });
+
+            // Stop the running generation from the Generation Console modal
+            document.getElementById('consoleStopBtn').addEventListener('click', stopCurrentRequest);
+
+            // Console toolbar: log level filters
+            document.querySelectorAll('[data-filter]').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    setActiveFilter(btn.getAttribute('data-filter'));
+                });
+            });
+
+            // Console toolbar: copy full log to clipboard
+            document.getElementById('consoleCopyBtn').addEventListener('click', function() {
+                if (!consoleLogText) return;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(consoleLogText).then(function() {
+                        showToast('Console log copied to clipboard', 'success');
+                    }).catch(function() {
+                        showToast('Failed to copy log', 'danger');
+                    });
+                } else {
+                    showToast('Clipboard not available in this browser', 'warning');
+                }
+            });
+
+            // Console toolbar: clear the visible log
+            document.getElementById('consoleClearBtn').addEventListener('click', function() {
+                const log = document.getElementById('consoleLog');
+                if (log) log.innerHTML = '';
+                consoleLogText = '';
+            });
+
+            // Console toolbar: download the full log as a text file
+            document.getElementById('consoleDownloadBtn').addEventListener('click', function() {
+                if (!consoleLogText) return;
+                const blob = new Blob([consoleLogText], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'generation-console.txt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+
+            function fetchJRXML() {
+                fetch('/api/ai-reporting-studio/jrxml')
+                    .then(response => response.text())
+                    .then(jrxml => {
+                        document.getElementById('jrxmlContent').textContent = jrxml;
+                    })
+                    .catch(error => {
+                        console.error('Error fetching JRXML:', error);
+                        document.getElementById('jrxmlContent').textContent = 'Error loading JRXML content.';
+                    });
+            }
+
+            function escapeHtml(text) {
+                if (!text) return '';
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            function showErrorAlert(title, message) {
+                // Create and show Bootstrap alert
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-danger alert-dismissible fade show position-fixed';
+                alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+                alertDiv.innerHTML = `
+                    <strong>${escapeHtml(title)}</strong><br>
+                    <small>${escapeHtml(message)}</small>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                `;
+                document.body.appendChild(alertDiv);
+
+                // Auto remove after 10 seconds
+                setTimeout(() => {
+                    if (alertDiv.parentNode) {
+                        alertDiv.remove();
+                    }
+                }, 10000);
+            }
+
+            function showToast(message, type) {
+                const alertDiv = document.createElement('div');
+                alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+                alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+                alertDiv.innerHTML = `${escapeHtml(message)}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+                document.body.appendChild(alertDiv);
+
+                setTimeout(() => {
+                    if (alertDiv.parentNode) {
+                        alertDiv.remove();
+                    }
+                }, 5000);
+            }
+
+            function updateSaveButtonState(key) {
+                const section = sections[key];
+                const saveBtn = document.getElementById(section.saveBtnId);
+                if (!saveBtn) return;
+
+                const select = document.getElementById(section.selectId);
+                const textarea = document.getElementById(section.textareaId);
+                const hasSelection = select.value && select.value !== '';
+                const content = textarea.value.trim();
+                const original = (sectionState[key] && sectionState[key].originalContent) || '';
+                saveBtn.disabled = !(hasSelection && content !== '' && content !== original);
+            }
+
+            function saveSection(key) {
+                const section = sections[key];
+                const saveBtn = document.getElementById(section.saveBtnId);
+                if (!saveBtn || saveBtn.disabled) return;
+                if (saveBtn.dataset.saving === 'true') return; // Prevent duplicate clicks
+
+                const select = document.getElementById(section.selectId);
+                const textarea = document.getElementById(section.textareaId);
+                const selectedId = select.value;
+                const content = textarea.value.trim();
+                const payload = {
+                    title: (sectionState[key] && sectionState[key].originalTitle) || '',
+                    content: content
+                };
+
+                // Loading state: disable button and show spinner while writing
+                saveBtn.dataset.saving = 'true';
+                saveBtn.disabled = true;
+                const originalHtml = saveBtn.innerHTML;
+                saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Saving...';
+
+                fetch(section.apiUrl(selectedId), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.text().then(text => {
+                            throw new Error(`HTTP ${response.status}: ${text}`);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(() => {
+                    // Update baseline so the button disables again
+                    sectionState[key].originalContent = content;
+                    // Keep the dropdown option in sync so re-selection loads the saved value
+                    const option = document.querySelector(`#${section.selectId} option[value="${selectedId}"]`);
+                    if (option) {
+                        option.setAttribute('data-content', content);
+                    }
+                    showToast(`${section.label} saved successfully!`, 'success');
+                })
+                .catch(error => {
+                    console.error(`Error saving ${section.label}:`, error);
+                    showToast(`Error saving ${section.label}: ${error.message}`, 'danger');
+                })
+                .finally(() => {
+                    saveBtn.innerHTML = originalHtml;
+                    delete saveBtn.dataset.saving;
+                    updateSaveButtonState(key);
+                });
+            }
+
+            function loadXmlData() {
+                fetch('/api/xmldata')
+                    .then(response => response.json())
+                    .then(data => {
+                        const select = document.getElementById('xmlDataSelect');
+                        // Clear existing options except the first one
+                        select.innerHTML = '<option value="">Select XML data...</option>';
+
+                        data.forEach(item => {
+                            const option = document.createElement('option');
+                            option.value = item.xmlDataId;
+                            option.textContent = item.title;
+                            option.setAttribute('data-content', item.content);
+                            select.appendChild(option);
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Error loading XML data:', error);
+                    });
+            }
+
+            function loadSystemPrompts() {
+                fetch('/api/systemprompt')
+                    .then(response => response.json())
+                    .then(data => {
+                        const select = document.getElementById('systemPromptSelect');
+                        // Clear existing options except the first one
+                        select.innerHTML = '<option value="">Select a system prompt...</option>';
+
+                        data.forEach(item => {
+                            const option = document.createElement('option');
+                            option.value = item.systemPromptId;
+                            option.textContent = item.title;
+                            option.setAttribute('data-content', item.content);
+                            select.appendChild(option);
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Error loading system prompts:', error);
+                    });
+            }
+
+            function loadKnowledge() {
+                fetch('/api/knowledge')
+                    .then(response => response.json())
+                    .then(data => {
+                        const select = document.getElementById('knowledgeSelect');
+                        // Clear existing options except the first one
+                        select.innerHTML = '<option value="">Select knowledge...</option>';
+
+                        data.forEach(item => {
+                            const option = document.createElement('option');
+                            option.value = item.knowledgeId;
+                            option.textContent = item.title;
+                            option.setAttribute('data-content', item.content);
+                            select.appendChild(option);
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Error loading knowledge:', error);
+                    });
+            }
+
+            function loadUserPrompts() {
+                fetch('/api/userprompt')
+                    .then(response => response.json())
+                    .then(data => {
+                        const select = document.getElementById('userPromptSelect');
+                        // Clear existing options except the first one
+                        select.innerHTML = '<option value="">Select a user prompt...</option>';
+
+                        data.forEach(item => {
+                            const option = document.createElement('option');
+                            option.value = item.userPromptId;
+                            option.textContent = item.title;
+                            option.setAttribute('data-content', item.content);
+                            select.appendChild(option);
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Error loading user prompts:', error);
+                    });
+            }
+        });
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

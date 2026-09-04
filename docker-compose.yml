@@ -1,0 +1,101 @@
+# ============================================================
+# Docker Compose for AI Reporting Studio
+# Usage:
+#   Build & start : docker compose up --build
+#   Stop          : docker compose down
+#   Stop + wipe DB: docker compose down -v
+#
+# Access app at:  http://localhost:8080
+# ============================================================
+services:
+  # ----------------------------------------------------------
+  # MariaDB Database
+  # Stores Knowledge, Prompts, XML Data, etc.
+  # ----------------------------------------------------------
+  mariadb:
+    image: mariadb:11.4
+    container_name: ai-reporting-mariadb
+    restart: unless-stopped
+    environment:
+      # Database credentials — these must match the SPRING_DATASOURCE
+      # values below. We use Docker Compose's internal DNS so the
+      # app connects to "mariadb:3306" instead of "localhost:3306".
+      MARIADB_ROOT_PASSWORD: rootpassword123
+      MARIADB_DATABASE: ai_reporting
+      MARIADB_USER: ai_reporting
+      MARIADB_PASSWORD: ai_reporting123
+    ports:
+      # Optional: expose DB to host for debugging with DBeaver/MySQL CLI
+      # Remove this line if you don't need external DB access
+      - "3306:3306"
+    volumes:
+      # Persist database data so it survives container restarts
+      # Data lives in a named volume (see bottom of this file)
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      # Health check ensures MariaDB is fully ready before the app starts.
+      # Without this, the app may crash on startup with "connection refused".
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ----------------------------------------------------------
+  # Spring Boot Application
+  # Built from the Dockerfile in the project root.
+  # ----------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-reporting-app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # ---- Database configuration ----
+      # Overrides application.properties values via Spring Boot's
+      # environment variable binding (relaxed binding).
+      # Hostname "mariadb" resolves to the MariaDB container above
+      # via Docker Compose's internal network.
+      SPRING_DATASOURCE_URL: jdbc:mariadb://mariadb:3306/ai_reporting
+      SPRING_DATASOURCE_USERNAME: ai_reporting
+      SPRING_DATASOURCE_PASSWORD: ai_reporting123
+
+      # ---- JPA / Hibernate ----
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: org.hibernate.dialect.MariaDBDialect
+      SPRING_JPA_DEFER_DATASOURCE_INITIALIZATION: "true"
+      SPRING_SQL_INIT_MODE: always
+
+      # ---- DeepSeek API (REQUIRED — set your key here!) ----
+      # Without a valid API key, AI report generation features will fail.
+      # You can also set this in a .env file (see docs).
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-your_deepseek_api_key_here}
+      DEEPSEEK_MODEL: deepseek-v4-flash
+      DEEPSEEK_API_URL: https://api.deepseek.com/chat/completions
+
+      # ---- JVM Memory Tuning ----
+      # Adjust based on your host machine's available RAM.
+      # JasperReports + AI calls can be memory-intensive.
+      JAVA_OPTS: "-Xmx1024m -Xms512m"
+    depends_on:
+      # Wait for MariaDB to pass its health check before starting the app.
+      # This is critical — without it, the app will try to connect to the
+      # DB before MariaDB is ready and crash.
+      mariadb:
+        condition: service_healthy
+    volumes:
+      # Optional: mount a temp directory for JasperReports temp files
+      # (not strictly required since we store JRXML in memory)
+      - app_temp:/tmp
+
+# ============================================================
+# Named volumes for data persistence
+# These survive `docker compose down` — run `docker compose down -v`
+# if you want to fully wipe everything (including DB data).
+# ============================================================
+volumes:
+  mariadb_data:
+  app_temp:

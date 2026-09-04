@@ -1,0 +1,49 @@
+spring.application.name=ai-reporting-studio
+spring.datasource.url=jdbc:mariadb://localhost:3306/ai_reporting
+spring.datasource.username=ai_reporting
+spring.datasource.password=ai_reporting123
+spring.datasource.driver-class-name=org.mariadb.jdbc.Driver
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MariaDBDialect
+
+# Run seed SQL after Hibernate has created/updated the schema (idempotent inserts)
+spring.jpa.defer-datasource-initialization=true
+spring.sql.init.mode=always
+spring.sql.init.data-locations=classpath:db/sample_data_xml_data.sql,classpath:db/sample_data_knowledge.sql,classpath:db/sample_data_system_prompt.sql,classpath:db/sample_data_user_prompt.sql
+
+# HikariCP Connection Pool Configuration
+spring.datasource.hikari.maximum-pool-size=5
+spring.datasource.hikari.minimum-idle=1
+spring.datasource.hikari.connection-timeout=20000
+spring.datasource.hikari.idle-timeout=300000
+spring.datasource.hikari.max-lifetime=1200000
+
+# DeepSeek API Configuration
+DEEPSEEK_API_KEY=
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_API_URL=https://api.deepseek.com/chat/completions
+
+# DeepSeek retry / timeout tunables (single source of truth for the report generation path)
+deepseek.max-retries=4
+deepseek.retry-delay-ms=3000
+deepseek.retry-max-delay-ms=30000
+deepseek.request-timeout-seconds=180
+deepseek.generate-deadline-ms=180000
+
+# Max compile+AI-fix attempts for the generated JRXML (JRXML auto-fix loop)
+app.jrxml.max-fix-attempts=5
+# Give up when the same compile error repeats this many consecutive times
+app.jrxml.max-same-error-attempts=3
+
+# Thymeleaf Configuration for Development (Auto-reload templates)
+spring.thymeleaf.cache=false
+
+
+
+# Logging Configuration
+logging.level.root=WARN
+logging.level.org.springframework=WARN
+logging.level.org.hibernate=WARN
+logging.level.com.zaxxer.hikari=WARN
+logging.level.org.apache=WARN
+logging.level.com.demo.aireportstudio=INFO

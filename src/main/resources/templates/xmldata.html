@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>XML Data Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div th:replace="~{navbar.html}"></div>
+    <div class="container mt-5">
+        <h1 class="mb-4">XML Data Management</h1>
+
+        <div class="row mb-3">
+            <div class="col">
+                <button class="btn btn-primary" onclick="showAddModal()">Add XML Data</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Title</th>
+                                        <th>Content</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="xmlDataTableBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center">
+                                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                            Loading XML data entries...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Modal -->
+    <div class="modal fade" id="xmlDataModal" tabindex="-1">
+        <div class="modal-dialog" style="width: 90%; max-width: none; margin: 5%; height: 90%;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">Add XML Data</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="xmlDataForm">
+                        <input type="hidden" id="xmlDataId">
+
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Title *</label>
+                            <input type="text" class="form-control" id="title" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="content" class="form-label">Content *</label>
+                            <textarea class="form-control" id="content" rows="10" required style="overflow: auto; resize: vertical; font-family: monospace;"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveXmlData()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Console Modal -->
+    <div class="modal fade" id="consoleModal" tabindex="-1">
+        <div class="modal-dialog" style="width: 90%; max-width: none; margin: 5%; height: 90%;">
+            <div class="modal-content" style="height: 100%;">
+                <div class="modal-header">
+                    <h5 class="modal-title">Console</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="height: calc(100% - 120px);">
+                    <textarea id="consoleTextArea" class="form-control" style="height: 100%; font-family: 'Courier New', monospace; font-size: 14px; background-color: #000; color: #fff; border: none; resize: none;" readonly></textarea>
+                </div>
+                <div class="modal-footer" style="display: none;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Validation Confirmation Modal -->
+    <div class="modal fade" id="validationModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header" id="validationModalHeader">
+                    <h5 class="modal-title">
+                        <i id="validationIcon" class="fas"></i>
+                        XML Validation Result
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Status Card -->
+                    <div class="card mb-3" id="validationStatusCard">
+                        <div class="card-body text-center">
+                            <div id="validationStatusIcon" class="mb-2" style="font-size: 3rem;"></div>
+                            <h4 id="validationStatusTitle" class="card-title"></h4>
+                            <p id="validationStatusMessage" class="card-text"></p>
+                        </div>
+                    </div>
+
+                    <!-- Issues Section -->
+                    <div id="issuesSection" class="mb-3" style="display: none;">
+                        <h6 class="text-danger mb-3">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Identified Issues
+                        </h6>
+                        <div class="card border-danger">
+                            <div class="card-body">
+                                <div id="issuesList"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Success Message -->
+                    <div id="successSection" class="text-center" style="display: none;">
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
+                            <h6>All validations passed successfully!</h6>
+                            <small class="text-muted">Your XML data is relationally consistent and ready to save.</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="button" class="btn" id="proceedSaveBtn" onclick="proceedWithSave()">
+                        <i id="saveIcon" class="fas"></i>
+                        <span id="saveButtonText">Proceed with Save</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            loadXmlDataList();
+        });
+
+        function loadXmlDataList() {
+            fetch('/api/xmldata')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('XML data received:', data);
+                    renderTable(data);
+                })
+                .catch(error => {
+                    console.error('Error loading XML data list:', error);
+                    document.getElementById('xmlDataTableBody').innerHTML =
+                        '<tr><td colspan="5" class="text-center text-danger">Error loading XML data entries</td></tr>';
+                });
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('xmlDataTableBody');
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No XML data entries found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map((item, index) => `
+                <tr>
+                    <td>${index + 1}</td>
+                    <td>${escapeHtml(item.title)}</td>
+                    <td>${escapeHtml(item.content.length > 100 ? item.content.substring(0, 100) + '...' : item.content)}</td>
+                    <td>${escapeHtml(formatDate(item.createdAt || item.created_at))}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editXmlData('${item.xmlDataId}')">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteXmlData('${item.xmlDataId}')">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            try {
+                let date;
+                if (Array.isArray(dateString)) {
+                    // Handle array format [year, month, day, hour, minute, second, nanosecond]
+                    date = new Date(dateString[0], dateString[1] - 1, dateString[2], dateString[3] || 0, dateString[4] || 0, dateString[5] || 0);
+                } else {
+                    // Handle ISO string format
+                    date = new Date(dateString);
+                }
+                return date.toLocaleDateString();
+            } catch (e) {
+                console.error('Error parsing date:', dateString, e);
+                return 'Invalid Date';
+            }
+        }
+
+        function showAddModal() {
+            document.getElementById('modalTitle').textContent = 'Add XML Data';
+            document.getElementById('xmlDataId').value = '';
+            document.getElementById('title').value = '';
+            document.getElementById('content').value = '';
+            document.getElementById('xmlDataForm').classList.remove('was-validated');
+
+            const modal = new bootstrap.Modal(document.getElementById('xmlDataModal'));
+            modal.show();
+        }
+
+        function editXmlData(id) {
+            fetch(`/api/xmldata/${id}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('modalTitle').textContent = 'Edit XML Data';
+                    document.getElementById('xmlDataId').value = data.xmlDataId;
+                    document.getElementById('title').value = data.title;
+                    document.getElementById('content').value = data.content;
+
+                    const modal = new bootstrap.Modal(document.getElementById('xmlDataModal'));
+                    modal.show();
+                })
+                .catch(error => {
+                    console.error('Error loading XML data:', error);
+                    alert('Error loading XML data entry');
+                });
+        }
+
+        let tempXmlData = null;
+        let consoleWebSocket = null;
+        let consoleSessionId = null;
+
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        function saveXmlData() {
+            const form = document.getElementById('xmlDataForm');
+            if (!form.checkValidity()) {
+                form.classList.add('was-validated');
+                return;
+            }
+
+            const xmlDataId = document.getElementById('xmlDataId').value;
+            tempXmlData = {
+                xmlDataId: xmlDataId,
+                title: document.getElementById('title').value,
+                content: document.getElementById('content').value
+            };
+
+            // Generate unique session ID for this console modal using UUID
+            consoleSessionId = generateUUID();
+
+            // Show console modal
+            document.getElementById('consoleTextArea').value = tempXmlData.content + '\n\n--- Console Session: ' + consoleSessionId + ' ---\n';
+            const consoleModal = new bootstrap.Modal(document.getElementById('consoleModal'));
+            consoleModal.show();
+
+            // Connect to WebSocket when modal is shown
+            document.getElementById('consoleModal').addEventListener('shown.bs.modal', connectConsoleWebSocket);
+            document.getElementById('consoleModal').addEventListener('hidden.bs.modal', disconnectConsoleWebSocket);
+        }
+
+        function connectConsoleWebSocket() {
+            if (consoleWebSocket && consoleWebSocket.readyState === WebSocket.OPEN) {
+                return; // Already connected
+            }
+
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/xmldatawebsocket?id=${consoleSessionId}`;
+
+            consoleWebSocket = new WebSocket(wsUrl);
+
+            consoleWebSocket.onopen = function(event) {
+                console.log('Console WebSocket connected');
+                appendToConsole('WebSocket connected\n');
+
+                // Immediately trigger validation
+                setTimeout(() => {
+                    validateAndSave();
+                }, 500); // Small delay to show connection message
+            };
+
+            consoleWebSocket.onmessage = function(event) {
+                appendToConsole('Received: ' + event.data + '\n');
+            };
+
+            consoleWebSocket.onclose = function(event) {
+                console.log('Console WebSocket disconnected');
+                appendToConsole('WebSocket disconnected\n');
+            };
+
+            consoleWebSocket.onerror = function(error) {
+                console.error('Console WebSocket error:', error);
+                appendToConsole('WebSocket error\n');
+            };
+        }
+
+        function disconnectConsoleWebSocket() {
+            if (consoleWebSocket) {
+                consoleWebSocket.close();
+                consoleWebSocket = null;
+            }
+        }
+
+        function appendToConsole(message) {
+            const textarea = document.getElementById('consoleTextArea');
+            textarea.value += message;
+            textarea.scrollTop = textarea.scrollHeight; // Auto scroll to bottom
+        }
+
+        function sendConsoleMessage() {
+            if (consoleWebSocket && consoleWebSocket.readyState === WebSocket.OPEN) {
+                const message = prompt('Enter message to send:');
+                if (message) {
+                    consoleWebSocket.send(message);
+                    appendToConsole('Sent: ' + message + '\n');
+                }
+            } else {
+                alert('WebSocket not connected');
+            }
+        }
+
+        async function validateAndSave() {
+            if (!tempXmlData) {
+                showAlert('No data to save', 'danger');
+                return;
+            }
+
+            try {
+                // Validate XML with DeepSeek AI
+                const validationResponse = await fetch('/api/xmldata/validate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: tempXmlData.content
+                });
+
+                if (!validationResponse.ok) {
+                    throw new Error('Validation request failed');
+                }
+
+                const validationResult = await validationResponse.json();
+
+                // Show validation modal
+                showValidationModal(validationResult);
+
+            } catch (error) {
+                console.error('Validation error:', error);
+                showAlert('Failed to validate XML data', 'danger');
+            }
+        }
+
+        function showValidationModal(validationResult) {
+            const modalHeader = document.getElementById('validationModalHeader');
+            const statusIcon = document.getElementById('validationStatusIcon');
+            const statusTitle = document.getElementById('validationStatusTitle');
+            const statusMessage = document.getElementById('validationStatusMessage');
+            const statusCard = document.getElementById('validationStatusCard');
+            const proceedBtn = document.getElementById('proceedSaveBtn');
+            const saveIcon = document.getElementById('saveIcon');
+            const saveButtonText = document.getElementById('saveButtonText');
+            const issuesSection = document.getElementById('issuesSection');
+            const successSection = document.getElementById('successSection');
+            const issuesList = document.getElementById('issuesList');
+
+            if (validationResult.xmlStatus === 'SUCCESS') {
+                // Success styling
+                modalHeader.className = 'modal-header bg-success text-white';
+                document.getElementById('validationIcon').className = 'fas fa-check-circle text-white me-2';
+                statusCard.className = 'card mb-3 border-success';
+                statusIcon.innerHTML = '<i class="fas fa-check-circle text-success" style="font-size: 4rem;"></i>';
+                statusTitle.textContent = 'Validation Successful!';
+                statusTitle.className = 'card-title text-success';
+                statusMessage.textContent = 'Your XML data passed all validation checks.';
+                proceedBtn.className = 'btn btn-success';
+                saveIcon.className = 'fas fa-save';
+                saveButtonText.textContent = 'Proceed with Save';
+
+                // Hide issues, show success
+                issuesSection.style.display = 'none';
+                successSection.style.display = 'block';
+
+            } else {
+                // Failure styling
+                modalHeader.className = 'modal-header bg-danger text-white';
+                document.getElementById('validationIcon').className = 'fas fa-exclamation-triangle text-white me-2';
+                statusCard.className = 'card mb-3 border-danger';
+                statusIcon.innerHTML = '<i class="fas fa-exclamation-triangle text-danger" style="font-size: 4rem;"></i>';
+                statusTitle.textContent = 'Validation Failed';
+                statusTitle.className = 'card-title text-danger';
+                statusMessage.textContent = 'Issues were found in your XML data. Review the details below.';
+                proceedBtn.className = 'btn btn-warning';
+                saveIcon.className = 'fas fa-exclamation-triangle';
+                saveButtonText.textContent = 'Save Anyway';
+
+                // Show issues, hide success
+                issuesSection.style.display = 'block';
+                successSection.style.display = 'none';
+
+                // Format and display issues
+                const issues = validationResult.xmlMessage || '';
+                if (issues.trim()) {
+                    const issueItems = issues.split(';').map(issue => {
+                        const trimmed = issue.trim();
+                        if (!trimmed) return '';
+
+                        // Parse issue format: nodeName(KEY_TYPE)
+                        const match = trimmed.match(/^(.+)\((.+)\)$/);
+                        if (match) {
+                            const nodeName = match[1].trim();
+                            const keyType = match[2].trim();
+                            return `<div class="alert alert-danger py-2 mb-2">
+                                <strong>${nodeName}</strong> - ${getIssueDescription(keyType)}
+                            </div>`;
+                        }
+                        return `<div class="alert alert-danger py-2 mb-2">${trimmed}</div>`;
+                    }).filter(item => item).join('');
+
+                    issuesList.innerHTML = issueItems || '<div class="alert alert-info">No specific issues identified.</div>';
+                } else {
+                    issuesList.innerHTML = '<div class="alert alert-info">No specific issues identified.</div>';
+                }
+            }
+
+            const validationModal = new bootstrap.Modal(document.getElementById('validationModal'));
+            validationModal.show();
+        }
+
+        function getIssueDescription(keyType) {
+            const descriptions = {
+                'PRIMARY_KEY': 'Missing required primary key',
+                'FOREIGN_KEY': 'Missing or invalid foreign key reference',
+                'RELATION': 'Broken relationship between XML nodes',
+                'XML_FORMAT': 'Invalid XML format or syntax'
+            };
+            return descriptions[keyType] || `${keyType} issue`;
+        }
+
+        function toggleDetailedAnalysis() {
+            const detailedDiv = document.getElementById('detailedAnalysis');
+            const button = document.getElementById('toggleAnalysisBtn');
+
+            if (detailedDiv.style.display === 'none') {
+                detailedDiv.style.display = 'block';
+                button.textContent = 'Hide Detailed Analysis';
+            } else {
+                detailedDiv.style.display = 'none';
+                button.textContent = 'Show Detailed Analysis';
+            }
+        }
+
+        function proceedWithSave() {
+            // Close validation modal
+            bootstrap.Modal.getInstance(document.getElementById('validationModal')).hide();
+
+            // Proceed with actual save
+            confirmSave();
+        }
+
+        function confirmSave() {
+            if (!tempXmlData) {
+                showAlert('No data to save', 'danger');
+                return;
+            }
+
+            const method = tempXmlData.xmlDataId ? 'PUT' : 'POST';
+            const url = tempXmlData.xmlDataId ? `/api/xmldata/${tempXmlData.xmlDataId}?sessionId=${consoleSessionId}` : `/api/xmldata?sessionId=${consoleSessionId}`;
+
+            fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: tempXmlData.title,
+                    content: tempXmlData.content
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.text().then(text => {
+                        throw new Error(`HTTP ${response.status}: ${text}`);
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                bootstrap.Modal.getInstance(document.getElementById('xmlDataModal')).hide();
+                bootstrap.Modal.getInstance(document.getElementById('consoleModal')).hide();
+                loadXmlDataList();
+                showAlert('XML data saved successfully!', 'success');
+                tempXmlData = null;
+            })
+            .catch(error => {
+                console.error('Error saving XML data:', error);
+                showAlert(`Error saving XML data: ${error.message}`, 'danger');
+            });
+        }
+
+        function deleteXmlData(id) {
+            if (!confirm('Are you sure you want to delete this XML data entry?')) {
+                return;
+            }
+
+            fetch(`/api/xmldata/${id}`, {
+                method: 'DELETE'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                loadXmlDataList();
+                showAlert('XML data deleted successfully!', 'success');
+            })
+            .catch(error => {
+                console.error('Error deleting XML data:', error);
+                showAlert('Error deleting XML data', 'danger');
+            });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showAlert(message, type) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            alertDiv.innerHTML = `${escapeHtml(message)}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+            document.body.appendChild(alertDiv);
+
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

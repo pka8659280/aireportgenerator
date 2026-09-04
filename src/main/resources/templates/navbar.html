@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Navigation Bar</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+
+    <!-- ===== Shared Floating Quick-Nav Menu (bottom-right, all pages) ===== -->
+    <style>
+        .fab-toggle {
+            position: fixed;
+            bottom: 1.25rem;
+            right: 1.25rem;
+            width: 3.5rem;
+            height: 3.5rem;
+            border: none;
+            border-radius: 50%;
+            background-color: #212529;
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 1050;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            touch-action: none;   /* let touch drags move the button instead of scrolling the page */
+            user-select: none;    /* avoid selecting text while dragging */
+            transition: transform 0.2s ease;
+        }
+        .fab-toggle:hover {
+            transform: scale(1.08);
+        }
+        .fab-toggle.fab-dragging {
+            transform: none;    /* disable the hover scale while dragging */
+            cursor: grabbing;
+            transition: none;   /* track the pointer exactly, no lag */
+        }
+        .fab-menu {
+            position: fixed;
+            bottom: 5.5rem;
+            right: 1.25rem;
+            z-index: 1050;
+            min-width: 11rem;
+            background-color: #212529;
+            border-radius: 0.5rem;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+            padding: 0.35rem 0;
+            display: none;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        .fab-menu.open {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .fab-menu a {
+            display: block;
+            padding: 0.5rem 1rem;
+            color: #ffffff;
+            text-decoration: none;
+            font-size: 0.95rem;
+            white-space: nowrap;
+        }
+        .fab-menu a:hover {
+            background-color: #343a40;
+            color: #ffffff;
+        }
+    </style>
+
+    <button type="button" class="fab-toggle" id="fabToggle" aria-label="Quick navigation" aria-expanded="false">
+        <svg id="fabIconOpen" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+        <svg id="fabIconClose" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display: none;">
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+        </svg>
+    </button>
+
+    <div class="fab-menu" id="fabMenu">
+        <a href="/">Home</a>
+        <a href="/ai-reporting-studio">AI Reporting Studio</a>
+        <a href="/xmldata">XML Data</a>
+        <a href="/knowledge">Knowledge</a>
+        <a href="/systemprompt">System Prompt</a>
+        <a href="/userprompt">User Prompt</a>
+        <a href="/chat">Chat</a>
+    </div>
+
+    <script>
+        (function () {
+            var toggle = document.getElementById('fabToggle');
+            var menu = document.getElementById('fabMenu');
+            if (!toggle || !menu) return;
+
+            var STORAGE_KEY = 'fabPosition';
+            var EDGE = 8;           // min gap from viewport edges, px
+            var DRAG_THRESHOLD = 5; // px of movement before it counts as a drag
+            var dragging = false;
+            var moved = false;
+            var startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+            function setOpen(open) {
+                menu.classList.toggle('open', open);
+                toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                var iconOpen = document.getElementById('fabIconOpen');
+                var iconClose = document.getElementById('fabIconClose');
+                if (iconOpen) iconOpen.style.display = open ? 'none' : '';
+                if (iconClose) iconClose.style.display = open ? '' : 'none';
+            }
+
+            function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+            function applyButtonPos(left, top) {
+                var size = toggle.offsetWidth || 56;
+                left = clamp(left, EDGE, window.innerWidth - size - EDGE);
+                top = clamp(top, EDGE, window.innerHeight - size - EDGE);
+                toggle.style.left = left + 'px';
+                toggle.style.top = top + 'px';
+                toggle.style.right = 'auto';
+                toggle.style.bottom = 'auto';
+            }
+
+            // Keep the menu anchored just above the button, aligned to its right edge
+            function positionMenu() {
+                var r = toggle.getBoundingClientRect();
+                menu.style.bottom = (window.innerHeight - r.top + 12) + 'px';
+                menu.style.right = (window.innerWidth - r.right) + 'px';
+            }
+
+            // Restore a previously saved position
+            var saved = null;
+            try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (err) { saved = null; }
+            if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
+                applyButtonPos(saved.left, saved.top);
+                positionMenu();
+            }
+
+            toggle.addEventListener('pointerdown', function (e) {
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                dragging = true;
+                moved = false;
+                startX = e.clientX;
+                startY = e.clientY;
+                var r = toggle.getBoundingClientRect();
+                startLeft = r.left;
+                startTop = r.top;
+                setOpen(false);
+                toggle.classList.add('fab-dragging');
+                if (toggle.setPointerCapture) toggle.setPointerCapture(e.pointerId);
+            });
+
+            toggle.addEventListener('pointermove', function (e) {
+                if (!dragging) return;
+                var dx = e.clientX - startX;
+                var dy = e.clientY - startY;
+                if (!moved && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+                    moved = true;
+                }
+                if (moved) applyButtonPos(startLeft + dx, startTop + dy);
+            });
+
+            function endDrag() {
+                if (!dragging) return;
+                dragging = false;
+                toggle.classList.remove('fab-dragging');
+                if (moved) {
+                    positionMenu();
+                    var r = toggle.getBoundingClientRect();
+                    try {
+                        localStorage.setItem(STORAGE_KEY,
+                            JSON.stringify({ left: Math.round(r.left), top: Math.round(r.top) }));
+                    } catch (err) {}
+                }
+            }
+            toggle.addEventListener('pointerup', endDrag);
+            toggle.addEventListener('pointercancel', endDrag);
+
+            toggle.addEventListener('click', function (e) {
+                e.stopPropagation();
+                if (moved) { moved = false; return; } // it was a drag, not a click
+                setOpen(!menu.classList.contains('open'));
+            });
+            menu.addEventListener('click', function (e) { e.stopPropagation(); });
+            document.addEventListener('click', function () { setOpen(false); });
+
+            // Re-clamp to the new viewport size when the window is resized
+            window.addEventListener('resize', function () {
+                if (saved) { applyButtonPos(saved.left, saved.top); positionMenu(); }
+            });
+        })();
+    </script>
+</body>
+</html>
